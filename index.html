@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="GC Attendance">
+  <title>Good Cup Attendance</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f5f0eb;
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      align-self: flex-start;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 14px; margin-bottom: 24px; }
+    label { font-weight: 600; font-size: 14px; display: block; margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%; padding: 12px; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 16px; margin-bottom: 16px;
+    }
+    .toggle-group { display: flex; gap: 12px; margin-bottom: 20px; }
+    .toggle-btn {
+      flex: 1; padding: 14px; border: 2px solid #ddd; border-radius: 10px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      background: white; transition: all 0.2s;
+    }
+    .toggle-btn.active-in { border-color: #16a34a; background: #f0fdf4; color: #16a34a; }
+    .toggle-btn.active-out { border-color: #dc2626; background: #fef2f2; color: #dc2626; }
+    .location-status {
+      font-size: 13px; color: #888; margin-bottom: 8px;
+      padding: 10px; background: #fafafa; border-radius: 8px;
+    }
+    .location-status.success { color: #16a34a; background: #f0fdf4; }
+    .location-status.error { color: #dc2626; background: #fef2f2; }
+    .location-status.pending { color: #d97706; background: #fffbeb; }
+    .submit-btn {
+      width: 100%; padding: 14px; border: none; border-radius: 10px;
+      font-size: 16px; font-weight: 600; color: white;
+      background: #6d4c2a; cursor: pointer; margin-top: 12px;
+    }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .result { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 14px; text-align: center; }
+    .result.success { background: #f0fdf4; color: #16a34a; }
+    .result.error { background: #fef2f2; color: #dc2626; }
+    #suggestions {
+      position: absolute; top: 48px; left: 0; right: 0;
+      background: white; border: 1px solid #ddd; border-radius: 8px;
+      max-height: 200px; overflow-y: auto; display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10;
+    }
+    .suggestion-item {
+      padding: 12px; cursor: pointer; font-size: 15px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover, .suggestion-item:active { background: #f5f0eb; }
+    .selfie-timer {
+      font-size: 13px; color: #888; margin-top: 8px;
+      padding: 8px; background: #fafafa; border-radius: 8px; text-align: center;
+    }
+    .selfie-timer.warning { color: #d97706; background: #fffbeb; font-weight: 600; }
+    .selfie-timer.expired { color: #dc2626; background: #fef2f2; font-weight: 600; }
+    /* Setup screen */
+    .setup-screen { text-align: center; }
+    .setup-screen h1 { font-size: 28px; margin-bottom: 8px; }
+    .setup-screen .subtitle { font-size: 15px; margin-bottom: 32px; }
+    .setup-step {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px; margin-bottom: 12px;
+      border-radius: 10px; background: #fafafa;
+      font-size: 14px; text-align: left;
+    }
+    .setup-step .icon { font-size: 24px; flex-shrink: 0; }
+    .setup-step.done { background: #f0fdf4; }
+    .setup-step.fail { background: #fef2f2; }
+    .start-btn {
+      width: 100%; padding: 16px; border: none; border-radius: 12px;
+      font-size: 18px; font-weight: 700; color: white;
+      background: #6d4c2a; cursor: pointer; margin-top: 20px;
+    }
+    .start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .start-btn:active { transform: scale(0.98); }
+    #btn-refresh-location {
+      width: 100%; padding: 10px; margin-bottom: 12px;
+      border: 1px solid #d97706; border-radius: 8px;
+      background: #fffbeb; color: #d97706;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- ═══ SETUP SCREEN ═══ -->
+    <div id="setup-screen" class="setup-screen">
+      <h1>☕</h1>
+      <h1>Good Cup Attendance</h1>
+      <p class="subtitle">We need your location and camera to record attendance.</p>
+
+      <div class="setup-step" id="step-location">
+        <span class="icon">📍</span>
+        <div><strong>Location</strong><br><span id="step-location-text">Tap below to allow</span></div>
+      </div>
+      <div class="setup-step" id="step-camera">
+        <span class="icon">📸</span>
+        <div><strong>Camera</strong><br><span id="step-camera-text">Tap below to allow</span></div>
+      </div>
+
+      <button class="start-btn" id="btn-start" onclick="runSetup()">📍 Allow Location & Camera</button>
+      <div id="setup-error" style="display:none; margin-top:16px; padding:14px; border-radius:10px; background:#fef2f2; color:#dc2626; font-size:13px; text-align:left;"></div>
+    </div>
+
+    <!-- ═══ MAIN FORM ═══ -->
+    <div id="main-form" style="display:none;">
+      <h1>☕ Good Cup Attendance</h1>
+      <p class="subtitle">Tap in or out to log your attendance</p>
+
+      <label>Name</label>
+      <div style="position:relative;">
+        <input type="text" id="name" placeholder="Start typing a name..." autocomplete="off" />
+        <div id="suggestions"></div>
+      </div>
+
+      <label>Type</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" id="btn-in" onclick="selectType('IN')">🟢 IN</button>
+        <button class="toggle-btn" id="btn-out" onclick="selectType('OUT')">🔴 OUT</button>
+      </div>
+
+      <label>Selfie</label>
+      <div class="selfie-section">
+        <video id="camera" autoplay playsinline style="width:100%;border-radius:10px;display:none;"></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <img id="preview" style="width:100%;border-radius:10px;display:none;" />
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="toggle-btn" id="btn-camera" onclick="startCamera()" style="flex:1;font-size:14px;padding:10px;">📸 Open Camera</button>
+          <button class="toggle-btn" id="btn-capture" onclick="takeSelfie()" style="flex:1;font-size:14px;padding:10px;display:none;">📷 Take Selfie</button>
+          <button class="toggle-btn" id="btn-retake" onclick="retakeSelfie()" style="flex:1;font-size:14px;padding:10px;display:none;">🔄 Retake</button>
+        </div>
+        <div id="selfie-timer" class="selfie-timer" style="display:none;"></div>
+      </div>
+      <div style="height:12px;"></div>
+
+      <div class="location-status" id="location-status">📍 Getting location...</div>
+      <button id="btn-refresh-location" onclick="refreshLocation()">🔄 Refresh Location</button>
+
+      <button class="submit-btn" id="submit-btn" onclick="submitForm()" disabled>Submit</button>
+      <div id="result"></div>
+    </div>
+
+  </div>
+
+  <script>
+    // ══════════════════════════════════════════════════
+    // CONFIGURATION — paste your Apps Script /exec URL here
+    // ══════════════════════════════════════════════════
+    var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzi4pBYfR3S8XKT84v-l2QSf3Q53vY1IYYUesbEWj78k8KwjbX-t1smIdcKH-_W1ZJB/exec';
+
+    // ══════════════════════════════════════════════════
+    // STATE
+    // ══════════════════════════════════════════════════
+    var selectedType = '';
+    var latitude = null;
+    var longitude = null;
+    var locationReady = false;
+    var selfieData = null;
+    var cameraStream = null;
+    var cameraPermissionGranted = false;
+
+    // ══════════════════════════════════════════════════
+    // SETUP FLOW
+    // ══════════════════════════════════════════════════
+
+    function runSetup() {
+      var btn = document.getElementById('btn-start');
+      btn.disabled = true;
+      btn.textContent = '⏳ Requesting permissions...';
+      document.getElementById('setup-error').style.display = 'none';
+      updateStep('location', 'pending', '⏳ Requesting...');
+
+      if (!navigator.geolocation) {
+        updateStep('location', 'fail', '❌ Geolocation not supported');
+        showSetupError('location', 2);
+        btn.disabled = false;
+        btn.textContent = '🔄 Try Again';
+        requestCameraInSetup();
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          latitude = pos.coords.latitude;
+          longitude = pos.coords.longitude;
+          locationReady = true;
+          updateStep('location', 'done', '✅ Granted (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')');
+          requestCameraInSetup();
+        },
+        function(err) {
+          locationReady = false;
+          var msg = err.code === 1
+            ? '❌ Denied — tap Try Again and allow location'
+            : err.code === 2
+            ? '❌ GPS unavailable — check signal and try again'
+            : '⏱️ Timed out — move to an open area and try again';
+          updateStep('location', 'fail', msg);
+          showSetupError('location', err.code);
+          btn.disabled = false;
+          btn.textContent = '🔄 Try Again';
+          requestCameraInSetup();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    function requestCameraInSetup() {
+      updateStep('camera', 'pending', '⏳ Requesting...');
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateStep('camera', 'fail', '❌ Camera not supported by this browser');
+        showSetupError('camera', 0);
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-start').textContent = '🔄 Try Again';
+        return;
+      }
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+        .then(function(stream) {
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          cameraPermissionGranted = true;
+          updateStep('camera', 'done', '✅ Granted');
+          checkSetupComplete();
+        })
+        .catch(function(err) {
+          updateStep('camera', 'fail', '❌ Denied — see instructions below');
+          showSetupError('camera', 0);
+          document.getElementById('btn-start').disabled = false;
+          document.getElementById('btn-start').textContent = '🔄 Try Again';
+          // If location succeeded, let them proceed anyway
+          checkSetupComplete();
+        });
+    }
+
+    function updateStep(step, status, text) {
+      var el = document.getElementById('step-' + step);
+      var textEl = document.getElementById('step-' + step + '-text');
+      el.className = 'setup-step' + (status === 'done' ? ' done' : status === 'fail' ? ' fail' : '');
+      textEl.innerHTML = text;
+    }
+
+    function showSetupError(type, code) {
+      var el = document.getElementById('setup-error');
+      el.style.display = 'block';
+      var label = type === 'location' ? 'Location' : 'Camera';
+      el.innerHTML = '<strong>⚠️ ' + label + ' was denied.</strong> Your browser remembered a previous denial.'
+        + '<br><br><strong>To fix this:</strong><br><br>'
+        + '<strong>📱 Android Chrome:</strong><br>'
+        + '1. Tap the 🔒 icon in the address bar<br>'
+        + '2. Tap "Permissions" or "Site settings"<br>'
+        + '3. Set ' + label + ' → "Allow"<br>'
+        + '4. Refresh the page and tap the button again<br><br>'
+        + '<strong>🍎 iPhone Safari:</strong><br>'
+        + '1. Go to <strong>Settings → Privacy → Location Services → Safari</strong><br>'
+        + '2. Set to <strong>"Ask Next Time"</strong><br>'
+        + '3. For Camera: <strong>Settings → Safari → Camera → Ask</strong><br>'
+        + '4. Return here and refresh the page<br><br>'
+        + '<strong>💻 Desktop Chrome:</strong><br>'
+        + '1. Click the 🔒 icon left of the URL<br>'
+        + '2. Set ' + label + ' → "Allow"<br>'
+        + '3. Refresh the page';
+    }
+
+    function checkSetupComplete() {
+      // Camera is required. Location will be fetched at submit time if missing.
+      if (cameraPermissionGranted) {
+        setTimeout(function() {
+          document.getElementById('setup-screen').style.display = 'none';
+          document.getElementById('main-form').style.display = 'block';
+          if (locationReady) {
+            setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')', 'success', false);
+          } else {
+            setLocationStatus('❌ Location not captured — tap Refresh Location', 'error', true);
+          }
+        }, 600);
+      }
+    }
+
+    // ══════════════════════════════════════════════════
+    // LOCATION
+    // ══════════════════════════════════════════════════
+
+    function setLocationStatus(msg, cls, showRefresh) {
+      var el = document.getElementById('location-status');
+      el.textContent = msg;
+      el.className = 'location-status ' + cls;
+      document.getElementById('btn-refresh-location').style.display = showRefresh ? 'block' : 'none';
+    }
+
+    function refreshLocation() {
+      setLocationStatus('⏳ Getting location...', 'pending', false);
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          latitude = pos.coords.latitude;
+          longitude = pos.coords.longitude;
+          locationReady = true;
+          setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')', 'success', false);
+          checkReady();
+        },
+        function(err) {
+          setLocationStatus('❌ Location denied — allow it in browser settings, then tap Refresh', 'error', true);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    // ══════════════════════════════════════════════════
+    // CAMERA
+    // ══════════════════════════════════════════════════
+
+    function startCamera() {
+      var video = document.getElementById('camera');
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+        .then(function(stream) {
+          cameraStream = stream;
+          video.srcObject = stream;
+          video.style.display = 'block';
+          document.getElementById('btn-camera').style.display = 'none';
+          document.getElementById('btn-capture').style.display = 'block';
+          document.getElementById('preview').style.display = 'none';
+          document.getElementById('btn-retake').style.display = 'none';
+        })
+        .catch(function(err) {
+          alert('Camera access failed. Please allow camera in your browser settings and refresh.');
+        });
+    }
+
+    var selfieCountdown = null;
+    var SELFIE_EXPIRY = 30;
+    var SELFIE_WARNING = 10;
+
+    function takeSelfie() {
+      var video = document.getElementById('camera');
+      var canvas = document.getElementById('canvas');
+      var preview = document.getElementById('preview');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      selfieData = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+      preview.src = canvas.toDataURL('image/jpeg', 0.7);
+      preview.style.display = 'block';
+      video.style.display = 'none';
+      document.getElementById('btn-capture').style.display = 'none';
+      document.getElementById('btn-retake').style.display = 'block';
+      if (cameraStream) cameraStream.getTracks().forEach(function(t) { t.stop(); });
+      checkReady();
+      startSelfieTimer();
+    }
+
+    function startSelfieTimer() {
+      clearSelfieTimer();
+      var secondsLeft = SELFIE_EXPIRY;
+      var timerEl = document.getElementById('selfie-timer');
+      timerEl.style.display = 'block';
+      timerEl.textContent = '⏱️ Submit within ' + secondsLeft + 's';
+      timerEl.className = 'selfie-timer';
+      selfieCountdown = setInterval(function() {
+        secondsLeft--;
+        if (secondsLeft <= 0) {
+          clearSelfieTimer();
+          selfieData = null;
+          document.getElementById('preview').style.display = 'none';
+          document.getElementById('btn-retake').style.display = 'none';
+          document.getElementById('btn-camera').style.display = 'block';
+          timerEl.textContent = '⚠️ Selfie expired! Please retake.';
+          timerEl.className = 'selfie-timer expired';
+          checkReady();
+        } else if (secondsLeft <= SELFIE_WARNING) {
+          timerEl.textContent = '⚠️ Hurry! ' + secondsLeft + 's left';
+          timerEl.className = 'selfie-timer warning';
+        } else {
+          timerEl.textContent = '⏱️ Submit within ' + secondsLeft + 's';
+        }
+      }, 1000);
+    }
+
+    function clearSelfieTimer() {
+      if (selfieCountdown) { clearInterval(selfieCountdown); selfieCountdown = null; }
+    }
+
+    function retakeSelfie() {
+      clearSelfieTimer();
+      selfieData = null;
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('btn-retake').style.display = 'none';
+      document.getElementById('selfie-timer').style.display = 'none';
+      startCamera();
+      checkReady();
+    }
+
+    // ══════════════════════════════════════════════════
+    // FORM LOGIC
+    // ══════════════════════════════════════════════════
+
+    function selectType(type) {
+      selectedType = type;
+      document.getElementById('btn-in').className = 'toggle-btn' + (type === 'IN' ? ' active-in' : '');
+      document.getElementById('btn-out').className = 'toggle-btn' + (type === 'OUT' ? ' active-out' : '');
+      checkReady();
+    }
+
+    function checkReady() {
+      var name = document.getElementById('name').value.trim();
+      document.getElementById('submit-btn').disabled = !(name && selectedType && locationReady && selfieData);
+    }
+
+    // ── Autocomplete ──
+    var searchTimeout = null;
+    document.getElementById('name').addEventListener('input', function() {
+      checkReady();
+      var query = this.value.trim();
+      if (query.length < 1) { document.getElementById('suggestions').style.display = 'none'; return; }
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(function() {
+        callAPI('GET', { action: 'searchEmployees', query: query })
+          .then(function(names) {
+            var box = document.getElementById('suggestions');
+            if (!names || names.length === 0) { box.style.display = 'none'; return; }
+            box.innerHTML = '';
+            names.forEach(function(name) {
+              var div = document.createElement('div');
+              div.className = 'suggestion-item';
+              div.textContent = name;
+              div.onclick = function() {
+                document.getElementById('name').value = name;
+                box.style.display = 'none';
+                checkReady();
+              };
+              box.appendChild(div);
+            });
+            box.style.display = 'block';
+          })
+          .catch(function() { /* silent fail for autocomplete */ });
+      }, 300);
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#name') && !e.target.closest('#suggestions')) {
+        document.getElementById('suggestions').style.display = 'none';
+      }
+    });
+
+    // ── API calls ──
+    function callAPI(method, params) {
+      if (method === 'GET') {
+        var qs = Object.keys(params).map(function(k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
+        return fetch(APPS_SCRIPT_URL + '?' + qs)
+          .then(function(r) { return r.json(); });
+      } else {
+        return fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify(params),
+          headers: { 'Content-Type': 'text/plain' } // text/plain avoids CORS preflight on Apps Script
+        }).then(function(r) { return r.json(); });
+      }
+    }
+
+    // ── Offline queue ──
+    var QUEUE_KEY = 'goodcup_attendance_queue';
+    function getQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY)) || []; } catch(e) { return []; } }
+    function saveQueue(q) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
+    function addToQueue(data) { var q = getQueue(); q.push(data); saveQueue(q); }
+
+    function syncQueue() {
+      var queue = getQueue();
+      if (queue.length === 0) return;
+      var remaining = []; var synced = 0; var total = queue.length;
+      queue.forEach(function(item) {
+        item.syncedOffline = true;
+        item.action = 'submitAttendance';
+        callAPI('POST', item)
+          .then(function() {
+            synced++;
+            if (synced + remaining.length === total) {
+              saveQueue(remaining);
+              if (synced > 0) showResult('✅ Synced ' + synced + ' offline submission(s)!', 'success');
+            }
+          })
+          .catch(function() {
+            remaining.push(item);
+            if (synced + remaining.length === total) saveQueue(remaining);
+          });
+      });
+    }
+    syncQueue();
+    window.addEventListener('online', syncQueue);
+
+    // ── Submit ──
+    function submitForm() {
+      var btn = document.getElementById('submit-btn');
+      btn.disabled = true; btn.textContent = 'Submitting...';
+      var data = {
+        action: 'submitAttendance',
+        name: document.getElementById('name').value.trim(),
+        type: selectedType,
+        latitude: latitude,
+        longitude: longitude,
+        selfie: selfieData,
+        clockTime: new Date().toISOString(),
+        syncedOffline: false
+      };
+
+      if (!navigator.onLine) {
+        addToQueue(data);
+        showResult('📦 Saved offline! (' + getQueue().length + ' pending) Will sync when back online.', 'success');
+        resetForm(); return;
+      }
+
+      callAPI('POST', data)
+        .then(function(res) {
+          if (res.success === false) {
+            if (res.canOverride) { showOverridePrompt(res.message, data); }
+            else { showResult('⚠️ ' + res.message, 'error'); btn.disabled = false; btn.textContent = 'Submit'; }
+            return;
+          }
+          showResult('✅ ' + res.message, 'success');
+          resetForm(); syncQueue();
+        })
+        .catch(function() {
+          addToQueue(data);
+          showResult('📦 Network error — saved offline. Will sync automatically.', 'success');
+          resetForm();
+        });
+    }
+
+    function submitWithData(data) {
+      var btn = document.getElementById('submit-btn');
+      btn.disabled = true; btn.textContent = 'Submitting...';
+      data.action = 'submitAttendance';
+      callAPI('POST', data)
+        .then(function(res) {
+          if (res.success === false) { showResult('⚠️ ' + res.message, 'error'); btn.disabled = false; btn.textContent = 'Submit'; return; }
+          showResult('✅ ' + res.message, 'success'); resetForm(); syncQueue();
+        })
+        .catch(function() { addToQueue(data); showResult('📦 Network error — saved offline.', 'success'); resetForm(); });
+    }
+
+    function showOverridePrompt(msg, originalData) {
+      var el = document.getElementById('result');
+      el.className = 'result error';
+      el.innerHTML = '';
+      var msgP = document.createElement('p');
+      msgP.textContent = '⚠️ ' + msg; msgP.style.marginBottom = '10px';
+      el.appendChild(msgP);
+      var btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:8px;';
+      var btnOut = document.createElement('button');
+      btnOut.textContent = '🔴 Clock OUT instead';
+      btnOut.style.cssText = 'flex:1;padding:10px;border:2px solid #dc2626;border-radius:8px;background:#fef2f2;color:#dc2626;font-weight:600;font-size:13px;cursor:pointer;';
+      btnOut.onclick = function() { originalData.type = 'OUT'; selectedType = 'OUT'; el.innerHTML = ''; el.className = ''; submitWithData(originalData); };
+      var btnOverride = document.createElement('button');
+      btnOverride.textContent = '⚡ Override & new IN';
+      btnOverride.style.cssText = 'flex:1;padding:10px;border:2px solid #d97706;border-radius:8px;background:#fffbeb;color:#d97706;font-weight:600;font-size:13px;cursor:pointer;';
+      btnOverride.onclick = function() { originalData.override = true; el.innerHTML = ''; el.className = ''; submitWithData(originalData); };
+      btnRow.appendChild(btnOut); btnRow.appendChild(btnOverride); el.appendChild(btnRow);
+      document.getElementById('submit-btn').disabled = true;
+      document.getElementById('submit-btn').textContent = 'Submit';
+    }
+
+    function showResult(msg, type) {
+      var el = document.getElementById('result');
+      el.textContent = msg; el.className = 'result ' + type;
+    }
+
+    function resetForm() {
+      document.getElementById('name').value = '';
+      selectedType = ''; selfieData = null; clearSelfieTimer();
+      document.getElementById('btn-in').className = 'toggle-btn';
+      document.getElementById('btn-out').className = 'toggle-btn';
+      document.getElementById('submit-btn').disabled = true;
+      document.getElementById('submit-btn').textContent = 'Submit';
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('btn-retake').style.display = 'none';
+      document.getElementById('btn-camera').style.display = 'block';
+      document.getElementById('camera').style.display = 'none';
+      document.getElementById('selfie-timer').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
