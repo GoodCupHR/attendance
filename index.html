@@ -6,6 +6,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://script.google.com https://*.googleusercontent.com; connect-src *; img-src * data:; media-src *;">
   <meta name="apple-mobile-web-app-title" content="GC Attendance">
   <title>Good Cup Attendance</title>
   <style>
@@ -182,7 +183,7 @@
     // ══════════════════════════════════════════════════
     // CONFIGURATION — paste your Apps Script /exec URL here
     // ══════════════════════════════════════════════════
-    var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxsyXN7cXjFsrSczwjzwnaprWe9B5lk_xtadcvC0yAw5aQn_k7b_nniBJmE8ZB1OscS/exec';
+    var APPS_SCRIPT_URL = 'https://whip.hr-86f.workers.dev';
 
     // ══════════════════════════════════════════════════
     // STATE
@@ -527,45 +528,26 @@
       }
 
       // Always try to refresh from server via JSONP
-      var cbName = 'gc_emp_' + Date.now();
-      var script = document.createElement('script');
-
-      var timer = setTimeout(function() {
-        delete window[cbName];
-        if (script.parentNode) script.parentNode.removeChild(script);
-        if (employeeList.length > 0) {
-          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
-        } else {
-          updateStep('employees', 'fail', '❌ Could not load — needs internet on first use');
-        }
-      }, 15000);
-
-      window[cbName] = function(names) {
-        clearTimeout(timer);
-        delete window[cbName];
-        if (script.parentNode) script.parentNode.removeChild(script);
-        if (names && Array.isArray(names) && names.length > 0) {
-          employeeList = names;
-          try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
-          updateStep('employees', 'done', '✅ ' + names.length + ' employees loaded');
-        } else if (employeeList.length > 0) {
-          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
-        } else {
-          updateStep('employees', 'fail', '❌ No employees found — check your sheet');
-        }
-      };
-
-      script.src = APPS_SCRIPT_URL + '?action=searchEmployees&query=all&callback=' + cbName;
-      script.onerror = function() {
-        clearTimeout(timer);
-        delete window[cbName];
-        if (employeeList.length > 0) {
-          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
-        } else {
-          updateStep('employees', 'fail', '❌ Failed to load — connect to internet first');
-        }
-      };
-      document.head.appendChild(script);
+      fetch(APPS_SCRIPT_URL + '?action=searchEmployees&query=all')
+        .then(function(r) { return r.json(); })
+        .then(function(names) {
+          if (names && Array.isArray(names) && names.length > 0) {
+            employeeList = names;
+            try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
+            updateStep('employees', 'done', '✅ ' + names.length + ' employees loaded');
+          } else if (employeeList.length > 0) {
+            updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+          } else {
+            updateStep('employees', 'fail', '❌ No employees found — check your sheet');
+          }
+        })
+        .catch(function() {
+          if (employeeList.length > 0) {
+            updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+          } else {
+            updateStep('employees', 'fail', '❌ Failed to load — check connection');
+          }
+        });
     }
 
     function searchLocal(query) {
@@ -615,72 +597,21 @@
     });
 
     // ── API calls ──
-    // GET search uses JSONP — the only method that bypasses CORS on iOS
-    // for Apps Script (which doesn't return Access-Control-Allow-Origin headers).
-    // POST for submissions uses text/plain which avoids a preflight check.
-
-    var jsonpCallbacks = {};
-
+    // All requests go through the Cloudflare Worker which adds CORS headers.
     function callAPI(method, params) {
       if (method === 'GET') {
-        return callJSONP(params);
-      } else {
-        return new Promise(function(resolve, reject) {
-          var xhr = new XMLHttpRequest();
-          xhr.open('POST', APPS_SCRIPT_URL, true);
-          xhr.setRequestHeader('Content-Type', 'text/plain');
-          xhr.timeout = 20000;
-          xhr.onload = function() {
-            try { resolve(JSON.parse(xhr.responseText)); }
-            catch(e) { resolve({ error: 'Bad response' }); }
-          };
-          xhr.onerror = function() { reject(new Error('Network error')); };
-          xhr.ontimeout = function() { reject(new Error('Timed out')); };
-          xhr.send(JSON.stringify(params));
-        });
-      }
-    }
-
-    function callJSONP(params) {
-      return new Promise(function(resolve, reject) {
-        var cbName = 'gc_cb_' + Date.now();
-        var script = document.createElement('script');
-        var done = false;
-        var timer = setTimeout(function() {
-          if (!done) {
-            done = true;
-            delete window[cbName];
-            if (script.parentNode) script.parentNode.removeChild(script);
-            reject(new Error('Timed out'));
-          }
-        }, 15000);
-
-        window[cbName] = function(data) {
-          if (!done) {
-            done = true;
-            clearTimeout(timer);
-            delete window[cbName];
-            if (script.parentNode) script.parentNode.removeChild(script);
-            resolve(data);
-          }
-        };
-
-        params.callback = cbName;
         var qs = Object.keys(params).map(function(k) {
           return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
         }).join('&');
-
-        script.src = APPS_SCRIPT_URL + '?' + qs;
-        script.onerror = function() {
-          if (!done) {
-            done = true;
-            clearTimeout(timer);
-            delete window[cbName];
-            reject(new Error('Load failed'));
-          }
-        };
-        document.head.appendChild(script);
-      });
+        return fetch(APPS_SCRIPT_URL + '?' + qs)
+          .then(function(r) { return r.json(); });
+      } else {
+        return fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        }).then(function(r) { return r.json(); });
+      }
     }
 
     // ── Offline queue ──
