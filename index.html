@@ -137,9 +137,10 @@
         <input type="text" id="name" placeholder="Type to search your name..." autocomplete="off" />
         <div id="suggestions"></div>
       </div>
-      <div id="name-hint" style="color:#888; font-size:12px; margin-top:-10px; margin-bottom:12px;">
+      <div id="name-hint" style="color:#888; font-size:12px; margin-top:-10px; margin-bottom:4px;">
         Type at least 1 letter, then tap your name from the list.
       </div>
+      <div id="search-debug" style="color:#d97706; font-size:12px; margin-bottom:8px;"></div>
       <div id="name-error" style="display:none; color:#dc2626; font-size:13px; margin-top:-10px; margin-bottom:12px;">
         Please select a name from the list — free typing is not allowed.
       </div>
@@ -462,28 +463,37 @@
       if (query.length < 1) { document.getElementById('suggestions').style.display = 'none'; return; }
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(function() {
+        var debugEl = document.getElementById('search-debug');
+        debugEl.textContent = '⏳ Searching "' + query + '"...';
         callAPI('POST', { action: 'searchEmployees', query: query })
           .then(function(names) {
             var box = document.getElementById('suggestions');
-            if (!names || !Array.isArray(names) || names.length === 0) { box.style.display = 'none'; return; }
+            if (!names || !Array.isArray(names) || names.length === 0) {
+              box.style.display = 'none';
+              debugEl.textContent = '⚠️ No results for "' + query + '"';
+              return;
+            }
+            debugEl.textContent = '✅ Found ' + names.length + ' result(s)';
             box.innerHTML = '';
             names.forEach(function(empName) {
               var div = document.createElement('div');
               div.className = 'suggestion-item';
               div.textContent = empName;
               div.onmousedown = function(e) {
-                // use onmousedown instead of onclick so it fires before input loses focus
                 e.preventDefault();
                 document.getElementById('name').value = empName;
                 validatedName = true;
                 box.style.display = 'none';
+                debugEl.textContent = '';
                 checkReady();
               };
               box.appendChild(div);
             });
             box.style.display = 'block';
           })
-          .catch(function() { /* silent fail for autocomplete */ });
+          .catch(function(err) {
+            debugEl.textContent = '❌ Error: ' + (err && err.message ? err.message : 'fetch failed');
+          });
       }, 300);
     });
 
@@ -497,14 +507,24 @@
     function callAPI(method, params) {
       if (method === 'GET') {
         var qs = Object.keys(params).map(function(k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
-        return fetch(APPS_SCRIPT_URL + '?' + qs)
-          .then(function(r) { return r.json(); });
+        return fetch(APPS_SCRIPT_URL + '?' + qs, { redirect: 'follow' })
+          .then(function(r) { return r.text(); })
+          .then(function(text) {
+            try { return JSON.parse(text); }
+            catch(e) { console.error('Search parse error:', text.substring(0, 200)); return []; }
+          });
       } else {
         return fetch(APPS_SCRIPT_URL, {
           method: 'POST',
+          redirect: 'follow',
           body: JSON.stringify(params),
-          headers: { 'Content-Type': 'text/plain' } // text/plain avoids CORS preflight on Apps Script
-        }).then(function(r) { return r.json(); });
+          headers: { 'Content-Type': 'text/plain' }
+        })
+          .then(function(r) { return r.text(); })
+          .then(function(text) {
+            try { return JSON.parse(text); }
+            catch(e) { console.error('API parse error:', text.substring(0, 200)); return { error: 'Bad response' }; }
+          });
       }
     }
 
