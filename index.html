@@ -517,7 +517,7 @@
         var cached = localStorage.getItem(EMPLOYEES_KEY);
         if (cached) {
           employeeList = JSON.parse(cached);
-          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+          updateStep('employees', 'done', '✅ 100% of Employees Cached');
         } else {
           updateStep('employees', 'pending', '⏳ Loading...');
         }
@@ -532,16 +532,16 @@
           if (names && Array.isArray(names) && names.length > 0) {
             employeeList = names;
             try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
-            updateStep('employees', 'done', '✅ ' + names.length + ' employees loaded');
+            updateStep('employees', 'done', '✅ 100% of Employees Loaded');
           } else if (employeeList.length > 0) {
-            updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+            updateStep('employees', 'done', '✅ 100% of Employees Cached');
           } else {
             updateStep('employees', 'fail', '❌ No employees found — check your sheet');
           }
         })
         .catch(function() {
           if (employeeList.length > 0) {
-            updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+            updateStep('employees', 'done', '✅ 100% of Employees Cached');
           } else {
             updateStep('employees', 'fail', '❌ Failed to load — check connection');
           }
