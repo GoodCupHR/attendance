@@ -183,7 +183,7 @@
     // ══════════════════════════════════════════════════
     // CONFIGURATION — paste your Apps Script /exec URL here
     // ══════════════════════════════════════════════════
-    var APPS_SCRIPT_URL = 'https://whip.hr-86f.workers.dev';
+    var APPS_SCRIPT_URL = 'https://whip.hr-86f.workers.dev'; // Cloudflare Worker proxy
 
     // ══════════════════════════════════════════════════
     // STATE
@@ -208,8 +208,6 @@
       document.getElementById('setup-error').style.display = 'none';
       updateStep('location', 'pending', '⏳ Requesting...');
 
-      // Load employees in parallel — no need to wait for GPS/camera
-      loadEmployeeList();
 
       if (!navigator.geolocation) {
         updateStep('location', 'fail', '❌ Geolocation not supported');
@@ -641,10 +639,12 @@
           });
       });
     }
+    // Load employees immediately when page opens — no button tap needed
+    loadEmployeeList();
     syncQueue();
     window.addEventListener('online', function() {
       syncQueue();
-      loadEmployeeList(); // refresh employee list when back online
+      loadEmployeeList();
     });
 
     // ── Submit ──
