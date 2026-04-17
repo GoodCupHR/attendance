@@ -134,8 +134,11 @@
 
       <label>Name</label>
       <div style="position:relative;">
-        <input type="text" id="name" placeholder="Start typing a name..." autocomplete="off" />
+        <input type="text" id="name" placeholder="Type to search your name..." autocomplete="off" />
         <div id="suggestions"></div>
+      </div>
+      <div id="name-hint" style="color:#888; font-size:12px; margin-top:-10px; margin-bottom:12px;">
+        Type at least 1 letter, then tap your name from the list.
       </div>
       <div id="name-error" style="display:none; color:#dc2626; font-size:13px; margin-top:-10px; margin-bottom:12px;">
         Please select a name from the list — free typing is not allowed.
@@ -436,9 +439,15 @@
       if (name && !validatedName) {
         nameEl.style.borderColor = '#dc2626';
         nameError.style.display = 'block';
-      } else {
-        nameEl.style.borderColor = validatedName ? '#16a34a' : '#ddd';
+        document.getElementById('name-hint').style.display = 'none';
+      } else if (validatedName) {
+        nameEl.style.borderColor = '#16a34a';
         nameError.style.display = 'none';
+        document.getElementById('name-hint').style.display = 'none';
+      } else {
+        nameEl.style.borderColor = '#ddd';
+        nameError.style.display = 'none';
+        document.getElementById('name-hint').style.display = 'block';
       }
 
       document.getElementById('submit-btn').disabled = !(name && validatedName && selectedType && locationReady && selfieData);
@@ -453,17 +462,19 @@
       if (query.length < 1) { document.getElementById('suggestions').style.display = 'none'; return; }
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(function() {
-        callAPI('GET', { action: 'searchEmployees', query: query })
+        callAPI('POST', { action: 'searchEmployees', query: query })
           .then(function(names) {
             var box = document.getElementById('suggestions');
-            if (!names || names.length === 0) { box.style.display = 'none'; return; }
+            if (!names || !Array.isArray(names) || names.length === 0) { box.style.display = 'none'; return; }
             box.innerHTML = '';
-            names.forEach(function(name) {
+            names.forEach(function(empName) {
               var div = document.createElement('div');
               div.className = 'suggestion-item';
-              div.textContent = name;
-              div.onclick = function() {
-                document.getElementById('name').value = name;
+              div.textContent = empName;
+              div.onmousedown = function(e) {
+                // use onmousedown instead of onclick so it fires before input loses focus
+                e.preventDefault();
+                document.getElementById('name').value = empName;
                 validatedName = true;
                 box.style.display = 'none';
                 checkReady();
@@ -609,6 +620,7 @@
       validatedName = false;
       document.getElementById('name').style.borderColor = '#ddd';
       document.getElementById('name-error').style.display = 'none';
+      document.getElementById('name-hint').style.display = 'block';
       selectedType = ''; selfieData = null; clearSelfieTimer();
       document.getElementById('btn-in').className = 'toggle-btn';
       document.getElementById('btn-out').className = 'toggle-btn';
