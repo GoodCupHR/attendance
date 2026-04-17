@@ -137,6 +137,9 @@
         <input type="text" id="name" placeholder="Start typing a name..." autocomplete="off" />
         <div id="suggestions"></div>
       </div>
+      <div id="name-error" style="display:none; color:#dc2626; font-size:13px; margin-top:-10px; margin-bottom:12px;">
+        Please select a name from the list — free typing is not allowed.
+      </div>
 
       <label>Type</label>
       <div class="toggle-group">
@@ -183,6 +186,7 @@
     var selfieData = null;
     var cameraStream = null;
     var cameraPermissionGranted = false;
+    var validatedName = false; // true only when name is picked from dropdown
 
     // ══════════════════════════════════════════════════
     // SETUP FLOW
@@ -426,12 +430,24 @@
 
     function checkReady() {
       var name = document.getElementById('name').value.trim();
-      document.getElementById('submit-btn').disabled = !(name && selectedType && locationReady && selfieData);
+      var nameEl = document.getElementById('name');
+      var nameError = document.getElementById('name-error');
+
+      if (name && !validatedName) {
+        nameEl.style.borderColor = '#dc2626';
+        nameError.style.display = 'block';
+      } else {
+        nameEl.style.borderColor = validatedName ? '#16a34a' : '#ddd';
+        nameError.style.display = 'none';
+      }
+
+      document.getElementById('submit-btn').disabled = !(name && validatedName && selectedType && locationReady && selfieData);
     }
 
     // ── Autocomplete ──
     var searchTimeout = null;
     document.getElementById('name').addEventListener('input', function() {
+      validatedName = false; // reset whenever user types manually
       checkReady();
       var query = this.value.trim();
       if (query.length < 1) { document.getElementById('suggestions').style.display = 'none'; return; }
@@ -448,6 +464,7 @@
               div.textContent = name;
               div.onclick = function() {
                 document.getElementById('name').value = name;
+                validatedName = true;
                 box.style.display = 'none';
                 checkReady();
               };
@@ -589,6 +606,9 @@
 
     function resetForm() {
       document.getElementById('name').value = '';
+      validatedName = false;
+      document.getElementById('name').style.borderColor = '#ddd';
+      document.getElementById('name-error').style.display = 'none';
       selectedType = ''; selfieData = null; clearSelfieTimer();
       document.getElementById('btn-in').className = 'toggle-btn';
       document.getElementById('btn-out').className = 'toggle-btn';
