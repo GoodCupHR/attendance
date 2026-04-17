@@ -122,6 +122,10 @@
         <span class="icon">📸</span>
         <div><strong>Camera</strong><br><span id="step-camera-text">Tap below to allow</span></div>
       </div>
+      <div class="setup-step" id="step-employees">
+        <span class="icon">👥</span>
+        <div><strong>Employee List</strong><br><span id="step-employees-text">Tap below to load</span></div>
+      </div>
 
       <button class="start-btn" id="btn-start" onclick="runSetup()">📍 Allow Location & Camera</button>
       <div id="setup-error" style="display:none; margin-top:16px; padding:14px; border-radius:10px; background:#fef2f2; color:#dc2626; font-size:13px; text-align:left;"></div>
@@ -202,6 +206,9 @@
       btn.textContent = '⏳ Requesting permissions...';
       document.getElementById('setup-error').style.display = 'none';
       updateStep('location', 'pending', '⏳ Requesting...');
+
+      // Load employees in parallel — no need to wait for GPS/camera
+      loadEmployeeList();
 
       if (!navigator.geolocation) {
         updateStep('location', 'fail', '❌ Geolocation not supported');
@@ -299,7 +306,6 @@
         setTimeout(function() {
           document.getElementById('setup-screen').style.display = 'none';
           document.getElementById('main-form').style.display = 'block';
-          loadEmployeeList(); // preload all employees for offline use
           if (locationReady) {
             setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')', 'success', false);
           } else {
@@ -507,63 +513,59 @@
     var employeeList = [];
 
     function loadEmployeeList() {
-      var debugEl = document.getElementById('search-debug');
-
       // Load from cache first — works immediately even offline
       try {
         var cached = localStorage.getItem(EMPLOYEES_KEY);
         if (cached) {
           employeeList = JSON.parse(cached);
-          debugEl.textContent = '👥 ' + employeeList.length + ' employees ready';
-          setTimeout(function() { debugEl.textContent = ''; }, 3000);
+          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+        } else {
+          updateStep('employees', 'pending', '⏳ Loading...');
         }
-      } catch(e) {}
-
-      // Refresh from server via JSONP script tag
-      if (navigator.onLine) {
-        debugEl.textContent = '⏳ Loading employee list...';
-        var cbName = 'gc_emp_' + Date.now();
-        var script = document.createElement('script');
-        var timer = setTimeout(function() {
-          delete window[cbName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          if (employeeList.length > 0) {
-            debugEl.textContent = '👥 ' + employeeList.length + ' employees (cached)';
-          } else {
-            debugEl.textContent = '⚠️ Could not load employees — check connection';
-          }
-          setTimeout(function() { debugEl.textContent = ''; }, 4000);
-        }, 15000);
-
-        window[cbName] = function(names) {
-          clearTimeout(timer);
-          delete window[cbName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-          if (names && Array.isArray(names) && names.length > 0) {
-            employeeList = names;
-            try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
-            debugEl.textContent = '✅ ' + names.length + ' employees loaded';
-            setTimeout(function() { debugEl.textContent = ''; }, 3000);
-          }
-        };
-
-        script.src = APPS_SCRIPT_URL + '?action=searchEmployees&query=all&callback=' + cbName;
-        script.onerror = function() {
-          clearTimeout(timer);
-          delete window[cbName];
-          if (employeeList.length > 0) {
-            debugEl.textContent = '👥 ' + employeeList.length + ' employees (cached)';
-          } else {
-            debugEl.textContent = '⚠️ Failed to load — no cache available';
-          }
-          setTimeout(function() { debugEl.textContent = ''; }, 4000);
-        };
-        document.head.appendChild(script);
-      } else {
-        if (employeeList.length === 0) {
-          document.getElementById('search-debug').textContent = '⚠️ Offline — no employee list cached yet';
-        }
+      } catch(e) {
+        updateStep('employees', 'pending', '⏳ Loading...');
       }
+
+      // Always try to refresh from server via JSONP
+      var cbName = 'gc_emp_' + Date.now();
+      var script = document.createElement('script');
+
+      var timer = setTimeout(function() {
+        delete window[cbName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+        if (employeeList.length > 0) {
+          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+        } else {
+          updateStep('employees', 'fail', '❌ Could not load — needs internet on first use');
+        }
+      }, 15000);
+
+      window[cbName] = function(names) {
+        clearTimeout(timer);
+        delete window[cbName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+        if (names && Array.isArray(names) && names.length > 0) {
+          employeeList = names;
+          try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
+          updateStep('employees', 'done', '✅ ' + names.length + ' employees loaded');
+        } else if (employeeList.length > 0) {
+          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+        } else {
+          updateStep('employees', 'fail', '❌ No employees found — check your sheet');
+        }
+      };
+
+      script.src = APPS_SCRIPT_URL + '?action=searchEmployees&query=all&callback=' + cbName;
+      script.onerror = function() {
+        clearTimeout(timer);
+        delete window[cbName];
+        if (employeeList.length > 0) {
+          updateStep('employees', 'done', '✅ ' + employeeList.length + ' employees (cached)');
+        } else {
+          updateStep('employees', 'fail', '❌ Failed to load — connect to internet first');
+        }
+      };
+      document.head.appendChild(script);
     }
 
     function searchLocal(query) {
