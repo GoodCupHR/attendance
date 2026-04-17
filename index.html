@@ -507,28 +507,62 @@
     var employeeList = [];
 
     function loadEmployeeList() {
-      // Load from cache first so it works immediately even offline
+      var debugEl = document.getElementById('search-debug');
+
+      // Load from cache first — works immediately even offline
       try {
         var cached = localStorage.getItem(EMPLOYEES_KEY);
         if (cached) {
           employeeList = JSON.parse(cached);
-          document.getElementById('search-debug').textContent = '👥 ' + employeeList.length + ' employees loaded (offline ready)';
-          setTimeout(function() { document.getElementById('search-debug').textContent = ''; }, 3000);
+          debugEl.textContent = '👥 ' + employeeList.length + ' employees ready';
+          setTimeout(function() { debugEl.textContent = ''; }, 3000);
         }
       } catch(e) {}
 
-      // Then refresh from server if online
+      // Refresh from server via JSONP script tag
       if (navigator.onLine) {
-        callAPI('GET', { action: 'searchEmployees', query: '' })
-          .then(function(names) {
-            if (names && Array.isArray(names) && names.length > 0) {
-              employeeList = names;
-              try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
-              document.getElementById('search-debug').textContent = '✅ Employee list updated (' + names.length + ')';
-              setTimeout(function() { document.getElementById('search-debug').textContent = ''; }, 3000);
-            }
-          })
-          .catch(function() { /* keep using cached list */ });
+        debugEl.textContent = '⏳ Loading employee list...';
+        var cbName = 'gc_emp_' + Date.now();
+        var script = document.createElement('script');
+        var timer = setTimeout(function() {
+          delete window[cbName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+          if (employeeList.length > 0) {
+            debugEl.textContent = '👥 ' + employeeList.length + ' employees (cached)';
+          } else {
+            debugEl.textContent = '⚠️ Could not load employees — check connection';
+          }
+          setTimeout(function() { debugEl.textContent = ''; }, 4000);
+        }, 15000);
+
+        window[cbName] = function(names) {
+          clearTimeout(timer);
+          delete window[cbName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+          if (names && Array.isArray(names) && names.length > 0) {
+            employeeList = names;
+            try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
+            debugEl.textContent = '✅ ' + names.length + ' employees loaded';
+            setTimeout(function() { debugEl.textContent = ''; }, 3000);
+          }
+        };
+
+        script.src = APPS_SCRIPT_URL + '?action=searchEmployees&query=all&callback=' + cbName;
+        script.onerror = function() {
+          clearTimeout(timer);
+          delete window[cbName];
+          if (employeeList.length > 0) {
+            debugEl.textContent = '👥 ' + employeeList.length + ' employees (cached)';
+          } else {
+            debugEl.textContent = '⚠️ Failed to load — no cache available';
+          }
+          setTimeout(function() { debugEl.textContent = ''; }, 4000);
+        };
+        document.head.appendChild(script);
+      } else {
+        if (employeeList.length === 0) {
+          document.getElementById('search-debug').textContent = '⚠️ Offline — no employee list cached yet';
+        }
       }
     }
 
