@@ -212,12 +212,12 @@
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
+      getBestLocation(
         function(pos) {
           latitude = pos.coords.latitude;
           longitude = pos.coords.longitude;
           locationReady = true;
-          updateStep('location', 'done', '✅ Granted (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')');
+          updateStep('location', 'done', '✅ Granted (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ') ±' + Math.round(pos.coords.accuracy) + 'm');
           requestCameraInSetup();
         },
         function(err) {
@@ -232,8 +232,7 @@
           btn.disabled = false;
           btn.textContent = '🔄 Try Again';
           requestCameraInSetup();
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        }
       );
     }
 
@@ -300,6 +299,7 @@
         setTimeout(function() {
           document.getElementById('setup-screen').style.display = 'none';
           document.getElementById('main-form').style.display = 'block';
+          loadEmployeeList(); // preload all employees for offline use
           if (locationReady) {
             setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')', 'success', false);
           } else {
@@ -321,17 +321,65 @@
     }
 
     function refreshLocation() {
-      setLocationStatus('⏳ Getting location...', 'pending', false);
-      navigator.geolocation.getCurrentPosition(
+      setLocationStatus('⏳ Getting accurate location... (stay still)', 'pending', false);
+      getBestLocation(
         function(pos) {
           latitude = pos.coords.latitude;
           longitude = pos.coords.longitude;
           locationReady = true;
-          setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')', 'success', false);
+          setLocationStatus('✅ Location captured (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ') ±' + Math.round(pos.coords.accuracy) + 'm', 'success', false);
           checkReady();
         },
         function(err) {
           setLocationStatus('❌ Location denied — allow it in browser settings, then tap Refresh', 'error', true);
+        }
+      );
+    }
+
+    // Gets the best available location by watching for up to 10s
+    // and accepting the first reading under 100m accuracy,
+    // or the best reading after the timeout.
+    function getBestLocation(onSuccess, onError) {
+      var watchId = null;
+      var bestPos = null;
+      var done = false;
+      var ACCURACY_TARGET = 100; // metres — accept anything better than this
+      var MAX_WAIT = 10000;      // wait up to 10 seconds for a good fix
+
+      var timer = setTimeout(function() {
+        if (!done) {
+          done = true;
+          navigator.geolocation.clearWatch(watchId);
+          if (bestPos) {
+            onSuccess(bestPos);
+          } else {
+            onError({ code: 3, message: 'Timeout' });
+          }
+        }
+      }, MAX_WAIT);
+
+      watchId = navigator.geolocation.watchPosition(
+        function(pos) {
+          if (done) return;
+          // Keep the most accurate reading seen so far
+          if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
+            bestPos = pos;
+          }
+          // If accuracy is good enough, accept immediately
+          if (pos.coords.accuracy <= ACCURACY_TARGET) {
+            done = true;
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            onSuccess(bestPos);
+          }
+        },
+        function(err) {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            navigator.geolocation.clearWatch(watchId);
+            onError(err);
+          }
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
@@ -454,47 +502,74 @@
       document.getElementById('submit-btn').disabled = !(name && validatedName && selectedType && locationReady && selfieData);
     }
 
+    // ── Employee list (cached locally for offline use) ──
+    var EMPLOYEES_KEY = 'goodcup_employees';
+    var employeeList = [];
+
+    function loadEmployeeList() {
+      // Load from cache first so it works immediately even offline
+      try {
+        var cached = localStorage.getItem(EMPLOYEES_KEY);
+        if (cached) {
+          employeeList = JSON.parse(cached);
+          document.getElementById('search-debug').textContent = '👥 ' + employeeList.length + ' employees loaded (offline ready)';
+          setTimeout(function() { document.getElementById('search-debug').textContent = ''; }, 3000);
+        }
+      } catch(e) {}
+
+      // Then refresh from server if online
+      if (navigator.onLine) {
+        callAPI('GET', { action: 'searchEmployees', query: '' })
+          .then(function(names) {
+            if (names && Array.isArray(names) && names.length > 0) {
+              employeeList = names;
+              try { localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(names)); } catch(e) {}
+              document.getElementById('search-debug').textContent = '✅ Employee list updated (' + names.length + ')';
+              setTimeout(function() { document.getElementById('search-debug').textContent = ''; }, 3000);
+            }
+          })
+          .catch(function() { /* keep using cached list */ });
+      }
+    }
+
+    function searchLocal(query) {
+      var q = query.toLowerCase();
+      return employeeList.filter(function(name) {
+        var parts = name.toLowerCase().split(' ');
+        return name.toLowerCase().indexOf(q) >= 0 ||
+               parts.some(function(p) { return p.indexOf(q) === 0; });
+      }).slice(0, 8);
+    }
+
     // ── Autocomplete ──
     var searchTimeout = null;
     document.getElementById('name').addEventListener('input', function() {
-      validatedName = false; // reset whenever user types manually
+      validatedName = false;
       checkReady();
       var query = this.value.trim();
       if (query.length < 1) { document.getElementById('suggestions').style.display = 'none'; return; }
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(function() {
-        var debugEl = document.getElementById('search-debug');
-        debugEl.textContent = '⏳ Searching "' + query + '"...';
-        callAPI('GET', { action: 'searchEmployees', query: query })
-          .then(function(names) {
-            var box = document.getElementById('suggestions');
-            if (!names || !Array.isArray(names) || names.length === 0) {
-              box.style.display = 'none';
-              debugEl.textContent = '⚠️ No results for "' + query + '"';
-              return;
-            }
-            debugEl.textContent = '✅ Found ' + names.length + ' result(s)';
-            box.innerHTML = '';
-            names.forEach(function(empName) {
-              var div = document.createElement('div');
-              div.className = 'suggestion-item';
-              div.textContent = empName;
-              div.onmousedown = function(e) {
-                e.preventDefault();
-                document.getElementById('name').value = empName;
-                validatedName = true;
-                box.style.display = 'none';
-                debugEl.textContent = '';
-                checkReady();
-              };
-              box.appendChild(div);
-            });
-            box.style.display = 'block';
-          })
-          .catch(function(err) {
-            debugEl.textContent = '❌ Error: ' + (err && err.message ? err.message : 'fetch failed');
-          });
-      }, 300);
+        var box = document.getElementById('suggestions');
+        var results = searchLocal(query);
+        if (results.length === 0) { box.style.display = 'none'; return; }
+        box.innerHTML = '';
+        results.forEach(function(empName) {
+          var div = document.createElement('div');
+          div.className = 'suggestion-item';
+          div.textContent = empName;
+          div.onmousedown = function(e) {
+            e.preventDefault();
+            document.getElementById('name').value = empName;
+            validatedName = true;
+            box.style.display = 'none';
+            document.getElementById('search-debug').textContent = '';
+            checkReady();
+          };
+          box.appendChild(div);
+        });
+        box.style.display = 'block';
+      }, 150);
     });
 
     document.addEventListener('click', function(e) {
@@ -600,7 +675,10 @@
       });
     }
     syncQueue();
-    window.addEventListener('online', syncQueue);
+    window.addEventListener('online', function() {
+      syncQueue();
+      loadEmployeeList(); // refresh employee list when back online
+    });
 
     // ── Submit ──
     function submitForm() {
