@@ -465,7 +465,7 @@
       searchTimeout = setTimeout(function() {
         var debugEl = document.getElementById('search-debug');
         debugEl.textContent = '⏳ Searching "' + query + '"...';
-        callAPI('POST', { action: 'searchEmployees', query: query })
+        callAPI('GET', { action: 'searchEmployees', query: query })
           .then(function(names) {
             var box = document.getElementById('suggestions');
             if (!names || !Array.isArray(names) || names.length === 0) {
@@ -504,28 +504,72 @@
     });
 
     // ── API calls ──
+    // GET search uses JSONP — the only method that bypasses CORS on iOS
+    // for Apps Script (which doesn't return Access-Control-Allow-Origin headers).
+    // POST for submissions uses text/plain which avoids a preflight check.
+
+    var jsonpCallbacks = {};
+
     function callAPI(method, params) {
       if (method === 'GET') {
-        var qs = Object.keys(params).map(function(k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
-        return fetch(APPS_SCRIPT_URL + '?' + qs, { redirect: 'follow' })
-          .then(function(r) { return r.text(); })
-          .then(function(text) {
-            try { return JSON.parse(text); }
-            catch(e) { console.error('Search parse error:', text.substring(0, 200)); return []; }
-          });
+        return callJSONP(params);
       } else {
-        return fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          redirect: 'follow',
-          body: JSON.stringify(params),
-          headers: { 'Content-Type': 'text/plain' }
-        })
-          .then(function(r) { return r.text(); })
-          .then(function(text) {
-            try { return JSON.parse(text); }
-            catch(e) { console.error('API parse error:', text.substring(0, 200)); return { error: 'Bad response' }; }
-          });
+        return new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', APPS_SCRIPT_URL, true);
+          xhr.setRequestHeader('Content-Type', 'text/plain');
+          xhr.timeout = 20000;
+          xhr.onload = function() {
+            try { resolve(JSON.parse(xhr.responseText)); }
+            catch(e) { resolve({ error: 'Bad response' }); }
+          };
+          xhr.onerror = function() { reject(new Error('Network error')); };
+          xhr.ontimeout = function() { reject(new Error('Timed out')); };
+          xhr.send(JSON.stringify(params));
+        });
       }
+    }
+
+    function callJSONP(params) {
+      return new Promise(function(resolve, reject) {
+        var cbName = 'gc_cb_' + Date.now();
+        var script = document.createElement('script');
+        var done = false;
+        var timer = setTimeout(function() {
+          if (!done) {
+            done = true;
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+            reject(new Error('Timed out'));
+          }
+        }, 15000);
+
+        window[cbName] = function(data) {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+            resolve(data);
+          }
+        };
+
+        params.callback = cbName;
+        var qs = Object.keys(params).map(function(k) {
+          return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+
+        script.src = APPS_SCRIPT_URL + '?' + qs;
+        script.onerror = function() {
+          if (!done) {
+            done = true;
+            clearTimeout(timer);
+            delete window[cbName];
+            reject(new Error('Load failed'));
+          }
+        };
+        document.head.appendChild(script);
+      });
     }
 
     // ── Offline queue ──
